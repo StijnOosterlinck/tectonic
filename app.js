@@ -1246,9 +1246,6 @@
     }
 
     // Composer: the demo question is pre-filled until it is sent.
-    document.getElementById("question-label").textContent =
-      "Question " + (state.questionIndex + 1) + " of " + QUESTIONS.length;
-    document.getElementById("country-chip").textContent = "Country: " + CONTEXT.countryName;
     var input = document.getElementById("question-input");
     var sendBtn = document.getElementById("send-btn");
     input.value = state.sent ? "" : q.text;
