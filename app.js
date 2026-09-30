@@ -711,10 +711,6 @@
     return ring;
   }
 
-  function trustPill(result) {
-    return el("span", "trust-pill " + levelClass(result.level), result.level + " trust");
-  }
-
   // Scores shown in the previous render, so a changed score can count up/down.
   var shownScores = {};
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -766,33 +762,43 @@
 
   function message(role) {
     var li = el("li", "msg msg-" + role);
-    if (role === "agent") li.appendChild(el("span", "avatar", "AI"));
     var bubble = el("div", "bubble");
     li.appendChild(bubble);
     return { li: li, bubble: bubble };
   }
 
-  // Conflict badges for a document: yellow for open/sent conflicts, green when it won one.
-  function conflictBadges(docId) {
-    var badges = [];
+  // Status lines for the scorecard: hard stops, conflicts, expert confirmation, recent votes.
+  // tone: "stop" (hard stop), "conflict" (unresolved conflict), "ok" (confirmed), "neutral".
+  function statusLines(item) {
+    var docId = item.doc.id;
+    var lines = [];
+    item.result.hardStops.forEach(function (hs) {
+      lines.push({ tone: "stop", text: hs.label });
+    });
     var conflicts = allConflicts().filter(function (c) {
       return involves(c, docId);
     });
     conflicts.forEach(function (c) {
+      var other = findDoc(otherDocId(c, docId)).title;
       if (c.status === "open") {
-        var other = findDoc(otherDocId(c, docId)).title;
-        var text = c.type === "contradiction" ? "⚠ Contradicts: " + other : "⚠ Duplicate of: " + other;
-        badges.push(el("span", "tag tag-conflict", text));
+        lines.push({ tone: "conflict", text: (c.type === "contradiction" ? "Contradicts: " : "Duplicate of: ") + other });
+      } else if (c.status === "sent") {
+        lines.push({ tone: "conflict", text: "Waiting for expert (" + (c.type === "contradiction" ? "contradicts " : "duplicate of ") + other + ")" });
       }
     });
-    if (conflicts.some(function (c) { return c.status === "sent"; })) {
-      badges.push(el("span", "tag tag-conflict", "⏳ Waiting for expert"));
-    }
     var won = conflicts.filter(function (c) {
       return c.status === "resolved" && c.winner === docId;
     })[0];
-    if (won) badges.push(el("span", "tag tag-confirmed", "✓ Confirmed by " + scoringContext.userName(won.resolvedBy)));
-    return badges;
+    if (won) lines.push({ tone: "ok", text: "Confirmed by " + scoringContext.userName(won.resolvedBy) });
+    var delta = state.snapshot[docId];
+    if (delta) lines.push({ tone: "neutral", text: formatDelta(delta) + " since last question" });
+    return lines;
+  }
+
+  // "Open conflict with X: −10" -> ["Open conflict with X", "−10"]
+  function splitReason(reason) {
+    var i = reason.lastIndexOf(": ");
+    return i === -1 ? [reason, ""] : [reason.slice(0, i), reason.slice(i + 2)];
   }
 
   // ---------- Scorecard (shown on hover/focus, or pinned with the info button) ----------
@@ -813,16 +819,17 @@
     top.appendChild(titles);
     var badge = el("div", "sc-badge");
     badge.appendChild(scoreRing(result, doc.id, "lg"));
-    badge.appendChild(trustPill(result));
+    badge.appendChild(el("span", "sc-level " + levelClass(result.level), result.level + " trust"));
     top.appendChild(badge);
     card.appendChild(top);
 
-    if (result.hardStops.length) {
-      var stops = el("ul", "hard-stops");
-      result.hardStops.forEach(function (hs) {
-        stops.appendChild(el("li", null, "⚠ " + hs.label));
+    var lines = statusLines(item);
+    if (lines.length) {
+      var status = el("ul", "sc-status");
+      lines.forEach(function (line) {
+        status.appendChild(el("li", "tone-" + line.tone, line.text));
       });
-      card.appendChild(stops);
+      card.appendChild(status);
     }
 
     var dl = el("dl", "meta");
@@ -836,7 +843,11 @@
 
     var reasons = el("ul", "reasons");
     result.reasons.forEach(function (r) {
-      reasons.appendChild(el("li", null, r));
+      var parts = splitReason(r);
+      var li = el("li", null);
+      li.appendChild(el("span", "reason-label", parts[0]));
+      li.appendChild(el("span", "reason-value", parts[1]));
+      reasons.appendChild(li);
     });
     card.appendChild(reasons);
 
@@ -877,20 +888,11 @@
 
     var text = el("span", "doc-text");
     text.appendChild(el("span", "doc-title", doc.title));
-    var sub = (SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType) + " · " + doc.team + " · " + doc.year;
-    text.appendChild(el("span", "doc-sub", sub));
-    var tags = el("span", "doc-tags");
-    tags.appendChild(trustPill(result));
-    if (isTop) tags.appendChild(el("span", "tag tag-recommended", "Recommended"));
-    var delta = state.snapshot[doc.id];
-    if (delta) tags.appendChild(el("span", "tag tag-delta", formatDelta(delta) + " since last question"));
-    result.hardStops.forEach(function (hs) {
-      tags.appendChild(el("span", "tag tag-stop", "⚠ " + hs.label));
-    });
-    conflictBadges(doc.id).forEach(function (b) {
-      tags.appendChild(b);
-    });
-    text.appendChild(tags);
+    var sub = el("span", "doc-sub");
+    if (isTop) sub.appendChild(el("span", "doc-recommended", "Recommended"));
+    sub.appendChild(document.createTextNode(
+      (SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType) + " · " + doc.team + " · " + doc.year));
+    text.appendChild(sub);
     main.appendChild(text);
     row.appendChild(main);
 
@@ -928,8 +930,6 @@
     m.bubble.appendChild(el("p", null,
       "I found " + ranked.length + " documents about meal vouchers. I recommend “" + top.doc.title +
       "” (trust " + top.result.score + ", " + top.result.level + ")."));
-    m.bubble.appendChild(el("p", "hint",
-      "Hover a document (or use the ⓘ button) to see its scorecard. Click a document to get the answer from it."));
     var heading = el("p", "sources-heading", "Sources found (" + ranked.length + ")");
     heading.id = "sources-heading";
     m.bubble.appendChild(heading);
@@ -950,42 +950,23 @@
     var m = message("agent");
     var b = m.bubble;
     b.classList.add("bubble-answer");
-    var heading = el("p", "answer-heading", "Answer");
-    b.appendChild(heading);
     b.appendChild(el("p", "answer-text", ANSWERS[currentQuestion().id][item.doc.id]));
 
     var based = el("div", "based-on");
     based.appendChild(scoreRing(item.result, item.doc.id, "sm"));
     var basedText = el("span", "based-on-text");
-    basedText.appendChild(el("span", "based-on-label", "Based on"));
+    basedText.appendChild(el("span", "based-on-label", "Based on · " + item.result.level + " trust"));
     basedText.appendChild(el("span", "based-on-title", item.doc.title));
     based.appendChild(basedText);
-    based.appendChild(trustPill(item.result));
-    conflictBadges(item.doc.id).forEach(function (badge) {
-      if (badge.classList.contains("tag-confirmed")) based.appendChild(badge);
-    });
     b.appendChild(based);
 
+    // One quiet caution line for low-trust sources; everything else lives in the scorecard.
     if (item.result.level === "Low") {
-      var warn = el("div", "notice notice-low");
-      if (item.result.hardStops.length) {
-        item.result.hardStops.forEach(function (hs) {
-          warn.appendChild(el("p", null, "⚠ Careful: " + hs.warning));
-        });
-      } else {
-        warn.appendChild(el("p", null, "⚠ Careful: this document has low trust."));
-      }
-      b.appendChild(warn);
-    } else if (item.result.level === "Medium") {
-      b.appendChild(el("div", "notice notice-medium", "Medium trust: consider checking a stronger source."));
+      var reason = item.result.hardStops.length
+        ? "Careful: " + item.result.hardStops[0].warning
+        : "Careful: this document has low trust.";
+      b.appendChild(el("p", "caution", reason));
     }
-
-    allConflicts().filter(function (c) {
-      return involves(c, item.doc.id) && isUnresolved(c);
-    }).forEach(function (c) {
-      b.appendChild(el("div", "notice notice-medium",
-        "This document is in an unresolved conflict with " + findDoc(otherDocId(c, item.doc.id)).title + "."));
-    });
 
     var voteRow = el("div", "vote-row");
     voteRow.appendChild(el("span", "vote-question", "Did this help with your customer?"));
@@ -1052,8 +1033,7 @@
     top.appendChild(scoreRing(item.result, docId, "md"));
     var titles = el("div", "dlg-doc-titles");
     titles.appendChild(el("p", "dlg-doc-title", item.doc.title));
-    titles.appendChild(el("p", "dlg-doc-sub", item.doc.team + " · " + item.doc.year));
-    titles.appendChild(trustPill(item.result));
+    titles.appendChild(el("p", "dlg-doc-sub", item.result.level + " trust · " + item.doc.team + " · " + item.doc.year));
     top.appendChild(titles);
     box.appendChild(top);
     box.appendChild(el("blockquote", "doc-content", item.doc.content));
@@ -1147,7 +1127,7 @@
       items.forEach(function (c) {
         var li = el("li", "inbox-item");
         var text = el("div", "inbox-text");
-        text.appendChild(el("span", "tag tag-conflict", c.type === "contradiction" ? "Contradiction" : "Duplicate"));
+        text.appendChild(el("span", "inbox-type", c.type === "contradiction" ? "Contradiction" : "Duplicate"));
         text.appendChild(el("p", "inbox-titles", findDoc(c.docA).title + " vs " + findDoc(c.docB).title));
         text.appendChild(el("p", "inbox-explanation", c.explanation));
         li.appendChild(text);
@@ -1225,7 +1205,6 @@
     inboxBtn.hidden = !isExpert;
     var n = isExpert ? inboxConflicts().length : 0;
     inboxBtn.textContent = "Conflict inbox (" + n + ")";
-    inboxBtn.classList.toggle("has-items", n > 0);
   }
 
   // ---------- Render ----------
