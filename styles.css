@@ -146,8 +146,9 @@ button:focus-visible,
    ========================================================= */
 
 .site-header {
-  background: var(--brand-blue);
-  color: #FFFFFF;
+  background: var(--card);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
 }
 
 .header-inner {
@@ -167,30 +168,29 @@ button:focus-visible,
   min-width: 0;
 }
 
-.logo-wrap {
-  display: inline-flex;
-  flex-shrink: 0;
-  background: #FFFFFF;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
-}
-
 .logo {
   display: block;
+  flex-shrink: 0;
   height: 32px;
   width: auto;
 }
 
+.brand-text {
+  min-width: 0;
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--border);
+}
+
 .app-title {
-  font-size: var(--text-md);
-  font-weight: var(--weight-bold);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
   letter-spacing: -0.01em;
 }
 
 .app-subtitle {
-  font-size: var(--text-sm);
-  opacity: 0.85;
+  font-size: var(--text-xs);
+  color: var(--muted);
 }
 
 /* =========================================================
@@ -244,25 +244,21 @@ button:focus-visible,
   font-size: var(--text-sm);
 }
 
-.btn-outline-white {
-  background: transparent;
-  color: #FFFFFF;
-  border-color: rgba(255, 255, 255, 0.7);
+.btn-ghost {
+  background: var(--card);
+  color: var(--text);
+  border-color: var(--border-strong);
   font-size: var(--text-sm);
   min-height: 36px;
 }
 
-.btn-outline-white:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: #FFFFFF;
+.btn-ghost:hover {
+  background: var(--bg);
+  border-color: var(--subtle);
 }
 
-.btn-outline-white:active {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.btn-outline-white:focus-visible {
-  box-shadow: 0 0 0 2px var(--brand-blue), 0 0 0 4px #FFFFFF;
+.btn-ghost:active {
+  background: var(--border);
 }
 
 .btn-link {
@@ -358,8 +354,8 @@ button:focus-visible,
 .msg-user .bubble {
   display: block;
   max-width: 480px;
-  background: var(--brand-blue);
-  color: #FFFFFF;
+  background: var(--blue-100);
+  color: var(--text);
   border-radius: var(--radius-lg);
   border-top-right-radius: var(--space-1);
   padding: var(--space-3) var(--space-4);
@@ -1018,8 +1014,8 @@ button:focus-visible,
     gap: var(--space-3);
   }
 
-  .logo-wrap {
-    padding: var(--space-1) 6px;
+  .brand-text {
+    padding-left: var(--space-3);
   }
 
   .app-title {
