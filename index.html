@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Payroll Knowledge Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="logo-wrap"><img class="logo" src="assets/logo-sdworx.png" alt="SD Worx"></span>
+        <div>
+          <h1 class="app-title">Payroll Knowledge Assistant</h1>
+          <p class="app-subtitle">Prototype – find it, understand it, trust it</p>
+        </div>
+      </div>
+      <button type="button" id="reset-btn" class="btn btn-outline-white">Reset demo</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="panel question-panel" aria-labelledby="question-label">
+      <h2 id="question-label" class="question-label" tabindex="-1">Question 1 of 2</h2>
+      <div id="question-text" class="question-text" role="textbox" aria-readonly="true" aria-labelledby="question-label"></div>
+      <span id="country-chip" class="chip"></span>
+    </section>
+
+    <section class="sources" aria-labelledby="sources-heading">
+      <h2 id="sources-heading" class="section-heading">Sources found (4)</h2>
+      <div id="cards" class="cards"></div>
+    </section>
+
+    <section id="answer-panel" class="panel answer-panel" aria-labelledby="answer-heading" hidden>
+      <h2 id="answer-heading" class="section-heading">Answer</h2>
+      <div id="answer-body" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Demo with fictional data. Amounts are not real legislation.</p>
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
