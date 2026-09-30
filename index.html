@@ -17,7 +17,15 @@
           <p class="app-subtitle">Prototype – find it, understand it, trust it</p>
         </div>
       </div>
-      <button type="button" id="reset-btn" class="btn btn-ghost">Reset demo</button>
+      <div class="header-actions">
+        <div class="role-switch">
+          <label for="role-select" class="role-label">Demo role:</label>
+          <select id="role-select" class="role-select"></select>
+          <span class="role-note">Demo only – not real authentication</span>
+        </div>
+        <button type="button" id="inbox-btn" class="btn btn-ghost btn-inbox" data-focus-key="inbox" hidden>Conflict inbox (0)</button>
+        <button type="button" id="reset-btn" class="btn btn-ghost" data-focus-key="reset">Reset demo</button>
+      </div>
     </div>
   </header>
 
@@ -39,6 +47,9 @@
     </form>
     <footer class="site-footer">Demo with fictional data. Amounts are not real legislation.</footer>
   </div>
+
+  <dialog id="conflict-dialog" class="dialog" aria-labelledby="dialog-title"></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="data.js"></script>
   <script src="app.js"></script>
