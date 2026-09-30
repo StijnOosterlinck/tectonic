@@ -1,5 +1,7 @@
 # Payroll Knowledge Assistant – Trust prototype (phase 1)
 
+Project repository for Tectonic Hackathon.
+
 Hackathon demo for the SD Worx case "Find it. Understand it. Trust it."
 
 Payroll consultants find answers in many places: official policies, old manuals, chat messages, training slides, documents for other countries. They often can't tell which source to trust, and sources sometimes contradict or duplicate each other. This prototype shows every source that answers a question with a **scorecard** and an **overall trust score**. The score is built from transparent rules: source type, owner, age, colleague votes, open conflicts, expert confirmation, and hard stops such as "superseded" or "wrong country". When two sources **contradict** each other or are **duplicates**, a conflict pop-up lets the consultant resolve it (if they are an expert for the owning team), send it to an expert, or skip it. The expert's decision immediately changes the scorecards: the winner is confirmed, and the loser is superseded or archived.
