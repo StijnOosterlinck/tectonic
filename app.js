@@ -315,11 +315,70 @@
     return "level-" + level.toLowerCase();
   }
 
-  function scorePill(result) {
-    var pill = el("span", "score-pill " + levelClass(result.level));
-    pill.appendChild(el("span", "score-number", String(result.score)));
-    pill.appendChild(el("span", "score-level", result.level));
-    return pill;
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  function svgEl(tag, attrs) {
+    var node = document.createElementNS(SVG_NS, tag);
+    for (var k in attrs) {
+      if (Object.prototype.hasOwnProperty.call(attrs, k)) node.setAttribute(k, String(attrs[k]));
+    }
+    return node;
+  }
+
+  // Circular trust ring: an SVG arc filled to the score (pathLength 100 = percent).
+  function scoreRing(result, docId, size) {
+    var ring = el("span", "ring ring-" + size + " " + levelClass(result.level));
+    ring.setAttribute("data-doc", docId);
+    ring.setAttribute("data-score", String(result.score));
+    var svg = svgEl("svg", { viewBox: "0 0 36 36", "aria-hidden": "true", focusable: "false" });
+    var circle = { cx: 18, cy: 18, r: 15.5, pathLength: 100, transform: "rotate(-90 18 18)" };
+    svg.appendChild(svgEl("circle", Object.assign({ "class": "ring-track" }, circle)));
+    svg.appendChild(svgEl("circle", Object.assign({
+      "class": "ring-value",
+      "stroke-dasharray": result.score + " 100"
+    }, circle)));
+    ring.appendChild(svg);
+    ring.appendChild(el("span", "ring-number", String(result.score)));
+    return ring;
+  }
+
+  function trustPill(result) {
+    return el("span", "trust-pill " + levelClass(result.level), result.level + " trust");
+  }
+
+  // Scores shown in the previous render, so a changed score can count up/down.
+  var shownScores = {};
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function animateScoreChanges() {
+    var rings = document.querySelectorAll(".ring[data-doc]");
+    var next = {};
+    Array.prototype.forEach.call(rings, function (ring) {
+      var docId = ring.getAttribute("data-doc");
+      var to = parseInt(ring.getAttribute("data-score"), 10);
+      var from = shownScores[docId];
+      next[docId] = to;
+      if (from === undefined || from === to || reduceMotion) return;
+
+      var number = ring.querySelector(".ring-number");
+      var arc = ring.querySelector(".ring-value");
+      var start = null;
+      var duration = 600;
+      ring.classList.add("is-changed");
+      number.textContent = String(from);
+      arc.setAttribute("stroke-dasharray", from + " 100");
+      function step(ts) {
+        if (start === null) start = ts;
+        var t = Math.min(1, (ts - start) / duration);
+        var eased = 1 - Math.pow(1 - t, 3);
+        var value = from + (to - from) * eased;
+        number.textContent = String(Math.round(value));
+        arc.setAttribute("stroke-dasharray", value.toFixed(2) + " 100");
+        if (t < 1) window.requestAnimationFrame(step);
+      }
+      window.requestAnimationFrame(step);
+    });
+    shownScores = next;
   }
 
   function ownerText(doc) {
@@ -357,9 +416,9 @@
     titles.appendChild(el("p", "sc-title", doc.title));
     titles.appendChild(el("p", "sc-type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType));
     top.appendChild(titles);
-    var badge = el("div", "sc-badge " + levelClass(result.level));
-    badge.appendChild(el("span", "sc-badge-number", String(result.score)));
-    badge.appendChild(el("span", "sc-badge-level", result.level + " trust"));
+    var badge = el("div", "sc-badge");
+    badge.appendChild(scoreRing(result, doc.id, "lg"));
+    badge.appendChild(trustPill(result));
     top.appendChild(badge);
     card.appendChild(top);
 
@@ -419,13 +478,14 @@
     });
     main.setAttribute("aria-pressed", selected ? "true" : "false");
     main.setAttribute("aria-label", "Use " + doc.title + ", trust score " + result.score + ", " + result.level);
-    main.appendChild(scorePill(result));
+    main.appendChild(scoreRing(result, doc.id, "md"));
 
     var text = el("span", "doc-text");
     text.appendChild(el("span", "doc-title", doc.title));
     var sub = (SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType) + " · " + doc.team + " · " + doc.year;
     text.appendChild(el("span", "doc-sub", sub));
     var tags = el("span", "doc-tags");
+    tags.appendChild(trustPill(result));
     if (isTop) tags.appendChild(el("span", "tag tag-recommended", "Recommended"));
     var delta = state.snapshot[doc.id];
     if (delta) tags.appendChild(el("span", "tag tag-delta", formatDelta(delta) + " since last question"));
@@ -474,9 +534,13 @@
     b.classList.add("bubble-answer");
     b.appendChild(el("p", "answer-text", ANSWERS[currentQuestion().id][item.doc.id]));
 
-    var based = el("p", "based-on");
-    based.appendChild(el("span", null, "Based on: " + item.doc.title));
-    based.appendChild(scorePill(item.result));
+    var based = el("div", "based-on");
+    based.appendChild(scoreRing(item.result, item.doc.id, "sm"));
+    var basedText = el("span", "based-on-text");
+    basedText.appendChild(el("span", "based-on-label", "Based on"));
+    basedText.appendChild(el("span", "based-on-title", item.doc.title));
+    based.appendChild(basedText);
+    based.appendChild(trustPill(item.result));
     b.appendChild(based);
 
     if (item.result.level === "Low") {
@@ -571,6 +635,8 @@
     input.value = state.sent ? "" : q.text;
     input.placeholder = state.sent ? "Pick a document above to get the answer" : "";
     sendBtn.disabled = state.sent;
+
+    animateScoreChanges();
 
     if (focusKey) {
       var target = document.querySelector('[data-focus-key="' + focusKey + '"]');
