@@ -221,7 +221,7 @@
     history: [],        // finished exchanges shown in the chat: { question, answer, docTitle }
     selectedDocId: null,
     openCard: null,     // docId whose scorecard is pinned open
-    expanded: {},       // { [docId]: true } – "View document" open
+    viewDocId: null,    // document open in the document viewer
     dialog: null        // { mode: "popup" | "inbox", view: "conflict" | "resolve" | "list", conflictId, queue, index }
   };
 
@@ -582,9 +582,77 @@
     render();
   }
 
-  function toggleContent(docId) {
-    state.expanded[docId] = !state.expanded[docId];
-    render();
+  // ---------- Document viewer ----------
+
+  function openDocument(docId) {
+    if (!findDoc(docId)) return;
+    state.viewDocId = docId;
+    state.openCard = null;
+    renderDocViewer();
+  }
+
+  function closeDocument() {
+    state.viewDocId = null;
+    renderDocViewer();
+  }
+
+  function renderDocViewer() {
+    var dialog = document.getElementById("doc-dialog");
+    if (!state.viewDocId) {
+      if (dialog.open) dialog.close();
+      return;
+    }
+    var item = scoredById(state.viewDocId);
+    var doc = item.doc;
+    dialog.textContent = "";
+
+    var page = el("article", "doc-page");
+    var head = el("header", "doc-page-head");
+    var headText = el("div", "doc-page-headtext");
+    headText.appendChild(el("p", "doc-page-type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType));
+    var title = el("h2", "doc-page-title", doc.title);
+    title.id = "doc-dialog-title";
+    headText.appendChild(title);
+    head.appendChild(headText);
+    var trust = el("div", "doc-page-trust");
+    trust.appendChild(scoreRing(item.result, doc.id, "md"));
+    trust.appendChild(el("span", "sc-level", item.result.level + " trust"));
+    head.appendChild(trust);
+    page.appendChild(head);
+
+    var dl = el("dl", "doc-page-meta");
+    metaRow(dl, "Type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType);
+    metaRow(dl, "Team", doc.team);
+    metaRow(dl, "Owner", ownerText(doc));
+    metaRow(dl, "Year", String(doc.year));
+    metaRow(dl, "Country", COUNTRY_NAMES[doc.country] || doc.country);
+    metaRow(dl, "Valid until", doc.validUntil ? formatDate(doc.validUntil) : "Unknown");
+    metaRow(dl, "Status", doc.status === "active" ? "Active" : doc.status === "superseded" ? "Superseded" : "Archived");
+    page.appendChild(dl);
+
+    var lines = statusLines(item).filter(function (l) {
+      return l.tone === "stop" || l.tone === "conflict";
+    });
+    if (lines.length) {
+      var status = el("ul", "sc-status doc-page-status");
+      lines.forEach(function (line) {
+        status.appendChild(el("li", "tone-" + line.tone, line.text));
+      });
+      page.appendChild(status);
+    }
+
+    var body = el("div", "doc-page-body");
+    body.appendChild(el("p", null, doc.content));
+    page.appendChild(body);
+
+    var foot = el("div", "doc-page-foot");
+    foot.appendChild(button("Close", "btn btn-ghost", "doc-close", closeDocument));
+    page.appendChild(foot);
+    dialog.appendChild(page);
+
+    if (!dialog.open) dialog.showModal();
+    var closeBtn = dialog.querySelector("[data-focus-key=doc-close]");
+    if (closeBtn) closeBtn.focus();
   }
 
   function vote(docId, value) {
@@ -640,7 +708,7 @@
     state.sent = false;
     state.selectedDocId = null;
     state.openCard = null;
-    state.expanded = {};
+    state.viewDocId = null;
     persist();
     render();
     document.getElementById("send-btn").focus({ preventScroll: true });
@@ -668,7 +736,7 @@
     state.history = [];
     state.selectedDocId = null;
     state.openCard = null;
-    state.expanded = {};
+    state.viewDocId = null;
     state.dialog = null;
     render();
     window.scrollTo(0, 0);
@@ -832,7 +900,6 @@
     var top = el("div", "sc-top");
     var titles = el("div", null);
     titles.appendChild(el("p", "sc-title", doc.title));
-    titles.appendChild(el("p", "sc-type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType));
     top.appendChild(titles);
     var badge = el("div", "sc-badge");
     badge.appendChild(scoreRing(result, doc.id, "lg"));
@@ -850,11 +917,12 @@
     }
 
     var dl = el("dl", "meta");
+    metaRow(dl, "Type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType);
     metaRow(dl, "Team", doc.team);
     metaRow(dl, "Owner", ownerText(doc));
     metaRow(dl, "Year", String(doc.year));
     metaRow(dl, "Country", doc.country);
-    metaRow(dl, "Valid until", doc.validUntil || "Unknown");
+    metaRow(dl, "Valid until", doc.validUntil ? formatDate(doc.validUntil) : "Unknown");
     var fb = item.feedback;
     var fbTotal = fb.helpful + fb.notHelpful;
     metaRow(dl, "Feedback", fbTotal
@@ -872,18 +940,11 @@
     });
     card.appendChild(reasons);
 
-    var expanded = !!state.expanded[doc.id];
-    var contentId = "content-" + doc.id;
-    var toggle = button(expanded ? "Hide document" : "View document", "btn-link", "toggle-" + doc.id, function () {
-      toggleContent(doc.id);
+    var open = button("Open document", "btn-link", "open-" + doc.id, function () {
+      openDocument(doc.id);
     });
-    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
-    toggle.setAttribute("aria-controls", contentId);
-    card.appendChild(toggle);
-    var content = el("blockquote", "doc-content", doc.content);
-    content.id = contentId;
-    content.hidden = !expanded;
-    card.appendChild(content);
+    open.setAttribute("aria-haspopup", "dialog");
+    card.appendChild(open);
 
     wrap.appendChild(card);
     return wrap;
@@ -977,7 +1038,12 @@
     based.appendChild(scoreRing(item.result, item.doc.id, "sm"));
     var basedText = el("span", "based-on-text");
     basedText.appendChild(el("span", "based-on-label", "Based on · " + item.result.level + " trust"));
-    basedText.appendChild(el("span", "based-on-title", item.doc.title));
+    var titleLink = button(item.doc.title, "based-on-title btn-link", "answer-open-" + item.doc.id, function () {
+      openDocument(item.doc.id);
+    });
+    titleLink.setAttribute("aria-haspopup", "dialog");
+    titleLink.setAttribute("aria-label", "Open document: " + item.doc.title);
+    basedText.appendChild(titleLink);
     based.appendChild(basedText);
     b.appendChild(based);
 
@@ -1301,6 +1367,11 @@
       e.preventDefault();
       send();
     }
+  });
+
+  // Document viewer: Escape or Close just closes it.
+  document.getElementById("doc-dialog").addEventListener("close", function () {
+    state.viewDocId = null;
   });
 
   var dialogEl = document.getElementById("conflict-dialog");
