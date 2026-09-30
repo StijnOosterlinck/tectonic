@@ -1,3 +1,6 @@
+# DEMO
+https://drive.google.com/file/d/1C_rGek_frCJtxLlhtyKtgW9X7qrL4w8J/view?usp=sharing
+
 # Payroll Knowledge Assistant – Trust prototype (phase 1)
 
 Project repository for Tectonic Hackathon.
@@ -63,3 +66,5 @@ Everything. The documents, people, teams, votes, conflicts and amounts are made 
 - Automatic conflict detection
 - Database
 - Real login (authentication and server-side authorization)
+
+
