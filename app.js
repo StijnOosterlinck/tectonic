@@ -68,8 +68,8 @@
   // doc: static document data plus runtime `status`.
   // conflicts: all conflicts with their runtime state merged in.
   // context: { country, demoDate, titleOf(docId), userName(userId) }
-  // feedback: { helpful, notHelpful } – counted votes (base + applied demo votes).
-  function scoreDocument(doc, feedback, conflicts, context) {
+  // votes: { up, down } – counted votes (base + demo votes applied so far).
+  function scoreDocument(doc, votes, conflicts, context) {
     var cfg = SCORING;
     var reasons = [];
     var hardStops = [];
@@ -99,15 +99,15 @@
       score -= agePenalty;
     }
 
-    // Colleague feedback as a helpful rate: 100% -> +max, 50% -> 0, 0% -> -max,
-    // scaled down while there are only a few votes. One extra vote barely moves it.
-    var totalVotes = feedback.helpful + feedback.notHelpful;
-    if (totalVotes > 0) {
-      var rate = feedback.helpful / totalVotes;
-      var confidence = Math.min(1, totalVotes / cfg.helpfulRateFullConfidenceVotes);
-      var effect = Math.round((rate - 0.5) * 2 * cfg.helpfulRateMaxBonus * confidence);
-      reasons.push(Math.round(rate * 100) + "% found it helpful (" + plural(totalVotes, "vote") + "): " + formatDelta(effect));
-      score += effect;
+    var netVotes = votes.up - votes.down;
+    if (netVotes > 0) {
+      var bonus = Math.min(netVotes * cfg.upvoteBonusPerVote, cfg.upvoteBonusMax);
+      reasons.push(plural(netVotes, "net upvote") + ": " + formatDelta(bonus));
+      score += bonus;
+    } else if (netVotes < 0) {
+      var penalty = Math.abs(netVotes) * cfg.downvotePenaltyPerVote;
+      reasons.push(plural(Math.abs(netVotes), "net downvote") + ": " + formatDelta(-penalty));
+      score -= penalty;
     }
 
     // Open or sent conflicts: one penalty per document, however many conflicts.
@@ -212,7 +212,7 @@
     questionIndex: 0,
     votes: {},          // { [userId]: { [questionId]: { [docId]: 1 | -1 } } } – what users clicked
     appliedVotes: {},   // same shape – votes already counted in scores (updated when the next question starts)
-    snapshot: {},       // { [docId]: { helpful, notHelpful } } newly counted when the current question started
+    snapshot: {},       // { [docId]: { up, down } } newly counted when the current question started
     conflicts: {},      // { [conflictId]: { status, winner, resolvedBy, resolvedAt } }
     docStatus: {},      // { [docId]: "active" | "superseded" | "archived" }
     skipped: {},        // { [questionId]: [conflictId] }
@@ -324,15 +324,15 @@
     return null;
   }
 
-  // Base feedback plus every demo vote in votesByUser (all users, all questions).
-  function feedbackFor(doc, votesByUser) {
-    var fb = { helpful: doc.baseFeedback.helpful, notHelpful: doc.baseFeedback.notHelpful };
+  // Base votes plus every demo vote in votesByUser (all users, all questions).
+  function votesFor(doc, votesByUser) {
+    var fb = { up: doc.baseVotes.up, down: doc.baseVotes.down };
     Object.keys(votesByUser).forEach(function (uid) {
       var perQuestion = votesByUser[uid] || {};
       Object.keys(perQuestion).forEach(function (qid) {
         var v = perQuestion[qid] && perQuestion[qid][doc.id];
-        if (v === 1) fb.helpful++;
-        if (v === -1) fb.notHelpful++;
+        if (v === 1) fb.up++;
+        if (v === -1) fb.down++;
       });
     });
     return fb;
@@ -360,8 +360,8 @@
   function scoredDoc(doc, conflicts) {
     var withStatus = Object.assign({}, doc, { status: docStatus(doc.id) });
     // Scores only use applied votes: a new vote counts from the next question on.
-    var feedback = feedbackFor(doc, state.appliedVotes);
-    return { doc: withStatus, feedback: feedback, result: scoreDocument(withStatus, feedback, conflicts, scoringContext) };
+    var votes = votesFor(doc, state.appliedVotes);
+    return { doc: withStatus, votes: votes, result: scoreDocument(withStatus, votes, conflicts, scoringContext) };
   }
 
   // Archived documents are not scored and not shown.
@@ -697,10 +697,10 @@
     var nextApplied = JSON.parse(JSON.stringify(state.votes));
     var snap = {};
     DOCUMENTS.forEach(function (d) {
-      var before = feedbackFor(d, state.appliedVotes);
-      var after = feedbackFor(d, nextApplied);
-      var diff = { helpful: after.helpful - before.helpful, notHelpful: after.notHelpful - before.notHelpful };
-      if (diff.helpful || diff.notHelpful) snap[d.id] = diff;
+      var before = votesFor(d, state.appliedVotes);
+      var after = votesFor(d, nextApplied);
+      var diff = { up: after.up - before.up, down: after.down - before.down };
+      if (diff.up || diff.down) snap[d.id] = diff;
     });
     state.appliedVotes = nextApplied;
     state.snapshot = snap;
@@ -873,18 +873,13 @@
     var delta = state.snapshot[docId];
     if (isPlainObject(delta)) {
       var parts = [];
-      if (delta.helpful > 0) parts.push(plural(delta.helpful, "new helpful vote"));
-      if (delta.notHelpful > 0) parts.push(plural(delta.notHelpful, "new not-helpful vote"));
+      if (delta.up > 0) parts.push(plural(delta.up, "new upvote"));
+      if (delta.down > 0) parts.push(plural(delta.down, "new downvote"));
       if (parts.length) lines.push({ tone: "neutral", text: parts.join(", ") + " since last question" });
     }
     return lines;
   }
 
-  // "Open conflict with X: −10" -> ["Open conflict with X", "−10"]
-  function splitReason(reason) {
-    var i = reason.lastIndexOf(": ");
-    return i === -1 ? [reason, ""] : [reason.slice(0, i), reason.slice(i + 2)];
-  }
 
   // ---------- Scorecard (shown on hover/focus, or pinned with the info button) ----------
 
@@ -923,22 +918,12 @@
     metaRow(dl, "Year", String(doc.year));
     metaRow(dl, "Country", doc.country);
     metaRow(dl, "Valid until", doc.validUntil ? formatDate(doc.validUntil) : "Unknown");
-    var fb = item.feedback;
-    var fbTotal = fb.helpful + fb.notHelpful;
-    metaRow(dl, "Feedback", fbTotal
-      ? fb.helpful + " of " + fbTotal + " found it helpful"
-      : "No votes yet");
+    var v = item.votes;
+    metaRow(dl, "Upvotes", String(v.up));
+    metaRow(dl, "Downvotes", String(v.down));
+    metaRow(dl, "Net votes", formatDelta(v.up - v.down));
     card.appendChild(dl);
 
-    var reasons = el("ul", "reasons");
-    result.reasons.forEach(function (r) {
-      var parts = splitReason(r);
-      var li = el("li", null);
-      li.appendChild(el("span", "reason-label", parts[0]));
-      li.appendChild(el("span", "reason-value", parts[1]));
-      reasons.appendChild(li);
-    });
-    card.appendChild(reasons);
 
     var open = button("Open document", "btn-link", "open-" + doc.id, function () {
       openDocument(doc.id);

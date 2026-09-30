@@ -15,12 +15,12 @@ The UI is a chat. The demo question is already in the chat bar; click **Send** t
 
 ## Demo script
 
-1. Click **Reset demo**. You are Lotte (consultant) on question 1; click **Send**. Documents in order: *Meal voucher policy 2026* 80, *Onboarding slide* 64, *Teams message* 47, *Payroll manual* 41, *Meal vouchers Luxembourg* 35.
+1. Click **Reset demo**. You are Lotte (consultant) on question 1; click **Send**. Documents in order: *Meal voucher policy 2026* 82, *Onboarding slide* 63, *Teams message* 47, *Payroll manual* 42, *Meal vouchers Luxembourg* 35.
 2. Pop-up "Conflict 1 of 2" (policy vs manual, contradiction). "I am expert" is disabled for Lotte. Click **Send message to expert**; a toast confirms it was sent to Sarah Janssens.
 3. Pop-up "Conflict 2 of 2" (policy vs onboarding slide, duplicate). Click **Skip**.
 4. Click the manual: the answer is €6.50, with a yellow "unresolved conflict" note. Click the policy: the answer is €7.50. Click 👍: the vote is recorded ("Thanks – counted from the next question"), and the score does not change yet.
-5. Switch **Demo role** to Sarah. No pop-up appears: c1 was sent and c2 was skipped for this question. Open **Conflict inbox (1)**, click **Resolve**, then "Meal voucher policy 2026 is correct". The manual turns red (35, superseded, decided by Sarah). The policy goes to 85 and shows "Confirmed by Sarah Janssens" in its scorecard.
-6. Click **Next question**, then **Send**. Lotte's vote now counts: the policy's scorecard shows "1 new helpful vote since last question" and "13 of 14 found it helpful". The score stays 85, because one extra vote barely moves a helpful rate. The pop-up for the duplicate opens: click **I am expert – resolve now**, then "Keep Meal voucher policy 2026, archive the other". The onboarding slide disappears (an "archived duplicate hidden" line is shown), and the policy goes to 95.
+5. Switch **Demo role** to Sarah. No pop-up appears: c1 was sent and c2 was skipped for this question. Open **Conflict inbox (1)**, click **Resolve**, then "Meal voucher policy 2026 is correct". The manual turns red (35, superseded, decided by Sarah). The policy goes to 87 and shows "Confirmed by Sarah Janssens" in its scorecard.
+6. Click **Next question**, then **Send**. Lotte's upvote now counts: the policy goes to 88, and its scorecard shows "1 new upvote since last question" and 14 upvotes. The pop-up for the duplicate opens: click **I am expert – resolve now**, then "Keep Meal voucher policy 2026, archive the other". The onboarding slide disappears (an "archived duplicate hidden" line is shown), and the policy goes to 98.
 7. Switch back to Lotte and click the policy: the answer is €1.20, with High trust and "Confirmed by Sarah Janssens".
 
 ## How scoring works
@@ -31,7 +31,7 @@ All values live in `SCORING` in `data.js`.
 2. Source type: official policy −0; manual, checklist or training slide −10; chat message −15.
 3. Owner: active −0, no owner −15, owner left the company −15.
 4. Age: −5 per year older than the demo year (2026), up to −20.
-5. Colleague feedback as a **helpful rate**, not a vote count: 100% helpful gives +12, 50% gives 0, 0% gives −12. The effect is scaled down while there are fewer than 10 votes. Votes count from the **next question** on, not immediately.
+5. Votes: net votes = upvotes − downvotes. A positive net gives +1 per vote (max +15); a negative net gives −2 per vote. A new vote counts from the **next question** on, not immediately.
 6. Open or sent conflict: −10 (once per document).
 7. Won a resolved conflict: +5, "Confirmed by …" (once per document).
 8. Clamp to 0–100; this is the raw score.
@@ -42,11 +42,11 @@ Documents are sorted by final score, with ties broken by raw score. The top one 
 
 | Moment | Policy | Slide | Teams | Manual | LU |
 |---|---|---|---|---|---|
-| Start | 80 | 64 | 47 | 41 | 35 |
-| After Lotte upvotes the policy | 80 (vote pending) | 64 | 47 | 41 | 35 |
-| After Sarah resolves c1 | 85 | 64 | 47 | 35 (superseded) | 35 |
-| Question 2 (vote now counted: 13 of 14 helpful) | 85 | 64 | 47 | 35 | 35 |
-| After Sarah resolves c2 | 95 | archived | 47 | 35 | 35 |
+| Start | 82 | 63 | 47 | 42 | 35 |
+| After Lotte upvotes the policy | 82 (vote counts from the next question) | 63 | 47 | 42 | 35 |
+| After Sarah resolves c1 | 87 | 63 | 47 | 35 (superseded) | 35 |
+| Question 2 (upvote now counted) | 88 | 63 | 47 | 35 | 35 |
+| After Sarah resolves c2 | 98 | archived | 47 | 35 | 35 |
 
 ## Roles and permissions (demo only)
 
