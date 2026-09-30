@@ -213,6 +213,7 @@
     docStatus: {},      // { [docId]: "active" | "superseded" | "archived" }
     skipped: {},        // { [questionId]: [conflictId] }
     sent: false,        // current question sent in the chat
+    loading: false,     // short "searching documents" state right after Send
     history: [],        // finished exchanges shown in the chat: { question, answer, docTitle }
     selectedDocId: null,
     openCard: null,     // docId whose scorecard is pinned open
@@ -400,7 +401,7 @@
 
   // Opens the pop-up for open, non-skipped conflicts among the shown documents (one at a time).
   function checkConflicts() {
-    if (!state.sent || state.dialog) return;
+    if (!state.sent || state.loading || state.dialog) return;
     var queue = allConflicts().filter(eligibleForPopup).map(function (c) {
       return c.id;
     });
@@ -533,16 +534,27 @@
     window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
   }
 
+  var SEARCH_DELAY_MS = 1200;
+  var searchTimer = null;
+
+  // Show the question at once, a short "searching" state, then the documents.
   function send() {
     if (state.sent) return;
     state.sent = true;
+    state.loading = true;
     state.selectedDocId = null;
     state.openCard = null;
     render();
-    var first = document.querySelector("[data-focus-key^='use-']");
-    if (first) first.focus({ preventScroll: true });
     scrollToBottom();
-    checkConflicts();
+    searchTimer = window.setTimeout(function () {
+      searchTimer = null;
+      state.loading = false;
+      render();
+      var first = document.querySelector("[data-focus-key^='use-']");
+      if (first) first.focus({ preventScroll: true });
+      scrollToBottom();
+      checkConflicts();
+    }, SEARCH_DELAY_MS);
   }
 
   function selectDoc(docId) {
@@ -625,6 +637,11 @@
   }
 
   function resetDemo() {
+    if (searchTimer) {
+      window.clearTimeout(searchTimer);
+      searchTimer = null;
+    }
+    state.loading = false;
     Object.keys(STORAGE_KEYS).forEach(function (k) {
       removeKey(STORAGE_KEYS[k]);
     });
@@ -995,6 +1012,21 @@
     return m.li;
   }
 
+  function renderLoadingMessage() {
+    var m = message("agent");
+    m.li.classList.add("msg-loading");
+    var row = el("div", "loading");
+    var dots = el("span", "typing-dots");
+    dots.setAttribute("aria-hidden", "true");
+    dots.appendChild(el("span", "typing-dot"));
+    dots.appendChild(el("span", "typing-dot"));
+    dots.appendChild(el("span", "typing-dot"));
+    row.appendChild(dots);
+    row.appendChild(el("span", "loading-text", "Searching documents and checking trust scores…"));
+    m.bubble.appendChild(row);
+    return m.li;
+  }
+
   function renderHistory(turn) {
     var frag = document.createDocumentFragment();
     var u = message("user");
@@ -1222,11 +1254,15 @@
       u.bubble.textContent = q.text;
       thread.appendChild(u.li);
 
-      var ranked = rankedDocs();
-      thread.appendChild(renderDocsMessage(ranked));
+      if (state.loading) {
+        thread.appendChild(renderLoadingMessage());
+      } else {
+        var ranked = rankedDocs();
+        thread.appendChild(renderDocsMessage(ranked));
 
-      for (var i = 0; i < ranked.length; i++) {
-        if (ranked[i].doc.id === state.selectedDocId) thread.appendChild(renderAnswerMessage(ranked[i]));
+        for (var i = 0; i < ranked.length; i++) {
+          if (ranked[i].doc.id === state.selectedDocId) thread.appendChild(renderAnswerMessage(ranked[i]));
+        }
       }
     }
 
@@ -1237,7 +1273,7 @@
     var input = document.getElementById("question-input");
     var sendBtn = document.getElementById("send-btn");
     input.value = state.sent ? "" : q.text;
-    input.placeholder = state.sent ? "Pick a document above to get the answer" : "";
+    input.placeholder = !state.sent ? "" : state.loading ? "Searching…" : "Pick a document above to get the answer";
     sendBtn.disabled = state.sent;
 
     renderDialog();
