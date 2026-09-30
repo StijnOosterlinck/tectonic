@@ -11,11 +11,11 @@ Payroll consultants find answers in many places: official policies, old manuals,
 
 ## Demo script
 
-1. Open the app and click **Reset demo**. Question 1 shows. Cards in order: *Meal voucher policy 2026* (92, High, Recommended), *Teams message* (47, Medium), *Meal vouchers Luxembourg* (35, Low), *Payroll manual* (35, Low).
-2. Click **Use this document** on *Payroll manual, benefits chapter*. The answer is €6.50, with a red "superseded" warning.
-3. Click **Use this document** on *Meal voucher policy 2026*. The answer is €7.50, with no warning. Click 👍.
+1. Open the app and click **Reset demo**. Question 1 is already in the chat bar; click **Send**. The assistant replies with four documents, in order: *Meal voucher policy 2026* (92, High, Recommended), *Teams message* (47, Medium), *Meal vouchers Luxembourg* (35, Low), *Payroll manual* (35, Low).
+2. Hover a document to see its scorecard (or use the ⓘ button). Click *Payroll manual, benefits chapter*. The answer is €6.50, with a red "superseded" warning.
+3. Click *Meal voucher policy 2026*. The answer is €7.50, with no warning. Click 👍.
 4. The policy now shows +13 votes and score 93.
-5. Click **Next question** to go to question 2. The policy shows the badge "+1 since last question" and score 93.
+5. Click **Next question**. Question 2 appears in the chat bar; click **Send**. The policy shows the badge "+1 since last question" and score 93.
 6. Select the policy. The answer is €1.20.
 
 ## How scoring works

@@ -142,7 +142,10 @@
     questionIndex: 0,
     votes: {},          // { [questionId]: { [docId]: 1 | -1 } }
     snapshot: {},       // { [docId]: net vote delta during the previous question }
+    sent: false,        // current question sent in the chat
+    history: [],        // finished exchanges shown in the chat: { question, answer, docTitle }
     selectedDocId: null,
+    openCard: null,     // docId whose scorecard is pinned open
     expanded: {}        // { [docId]: true } – "View document" open
   };
 
@@ -197,11 +200,31 @@
 
   // ---------- Actions ----------
 
+  function scrollToBottom() {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+  }
+
+  function send() {
+    if (state.sent) return;
+    state.sent = true;
+    state.selectedDocId = null;
+    state.openCard = null;
+    render();
+    var first = document.querySelector("[data-focus-key^='use-']");
+    if (first) first.focus({ preventScroll: true });
+    scrollToBottom();
+  }
+
   function selectDoc(docId) {
     state.selectedDocId = docId;
+    state.openCard = null;
     render();
-    var panel = document.getElementById("answer-panel");
-    if (panel && panel.scrollIntoView) panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    scrollToBottom();
+  }
+
+  function toggleCard(docId) {
+    state.openCard = state.openCard === docId ? null : docId;
+    render();
   }
 
   function toggleContent(docId) {
@@ -222,21 +245,37 @@
   }
 
   function goToNextQuestion() {
+    var isLast = state.questionIndex === QUESTIONS.length - 1;
+
+    // Keep the finished exchange visible in the chat (Start over clears it).
+    if (isLast) {
+      state.history = [];
+    } else {
+      var doc = findDoc(state.selectedDocId);
+      state.history.push({
+        question: currentQuestion().text,
+        answer: doc ? ANSWERS[currentQuestion().id][doc.id] : "",
+        docTitle: doc ? doc.title : ""
+      });
+    }
+
     // Snapshot the votes added during the question that is ending.
     var prevVotes = state.votes[currentQuestion().id] || {};
     var snap = {};
-    DOCUMENTS.forEach(function (doc) {
-      var v = prevVotes[doc.id];
-      if (v === 1 || v === -1) snap[doc.id] = v;
+    DOCUMENTS.forEach(function (d) {
+      var v = prevVotes[d.id];
+      if (v === 1 || v === -1) snap[d.id] = v;
     });
     state.snapshot = snap;
-    state.questionIndex = state.questionIndex === 0 ? 1 : 0;
+    state.questionIndex = isLast ? 0 : state.questionIndex + 1;
+    state.sent = false;
     state.selectedDocId = null;
+    state.openCard = null;
     state.expanded = {};
     persist();
     render();
-    var heading = document.getElementById("question-label");
-    if (heading) heading.focus();
+    document.getElementById("send-btn").focus({ preventScroll: true });
+    scrollToBottom();
   }
 
   function resetDemo() {
@@ -246,9 +285,13 @@
     state.questionIndex = 0;
     state.votes = {};
     state.snapshot = {};
+    state.sent = false;
+    state.history = [];
     state.selectedDocId = null;
+    state.openCard = null;
     state.expanded = {};
     render();
+    window.scrollTo(0, 0);
   }
 
   // ---------- Rendering helpers ----------
@@ -272,11 +315,11 @@
     return "level-" + level.toLowerCase();
   }
 
-  function scoreBadge(result, small) {
-    var badge = el("div", "score-badge " + levelClass(result.level) + (small ? " score-badge-small" : ""));
-    badge.appendChild(el("span", "score-number", String(result.score)));
-    badge.appendChild(el("span", "score-level", result.level + " trust"));
-    return badge;
+  function scorePill(result) {
+    var pill = el("span", "score-pill " + levelClass(result.level));
+    pill.appendChild(el("span", "score-number", String(result.score)));
+    pill.appendChild(el("span", "score-level", result.level));
+    return pill;
   }
 
   function ownerText(doc) {
@@ -290,36 +333,40 @@
     dl.appendChild(el("dd", null, value));
   }
 
-  function renderCard(item, isTop) {
+  function message(role) {
+    var li = el("li", "msg msg-" + role);
+    if (role === "agent") li.appendChild(el("span", "avatar", "AI"));
+    var bubble = el("div", "bubble");
+    li.appendChild(bubble);
+    return { li: li, bubble: bubble };
+  }
+
+  // ---------- Scorecard (shown on hover/focus, or pinned with the info button) ----------
+
+  function renderScorecard(item) {
     var doc = item.doc;
     var result = item.result;
-    var selected = state.selectedDocId === doc.id;
+    var wrap = el("div", "scorecard");
+    wrap.id = "scorecard-" + doc.id;
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Scorecard: " + doc.title);
+    var card = el("div", "scorecard-inner");
 
-    var card = el("article", "card" + (selected ? " card-selected" : ""));
-    card.setAttribute("aria-label", doc.title);
-
-    var top = el("div", "card-top");
-    var titleWrap = el("div", "card-title-wrap");
-    var labels = el("div", "card-labels");
-    if (isTop) labels.appendChild(el("span", "label label-recommended", "Recommended"));
-    var delta = state.snapshot[doc.id];
-    if (delta) {
-      labels.appendChild(el("span", "label label-delta", formatDelta(delta) + " since last question"));
-    }
-    if (labels.childNodes.length) titleWrap.appendChild(labels);
-    titleWrap.appendChild(el("h3", "card-title", doc.title));
-    titleWrap.appendChild(el("span", "source-type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType));
-    top.appendChild(titleWrap);
-    top.appendChild(scoreBadge(result, false));
+    var top = el("div", "sc-top");
+    var titles = el("div", null);
+    titles.appendChild(el("p", "sc-title", doc.title));
+    titles.appendChild(el("p", "sc-type", SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType));
+    top.appendChild(titles);
+    var badge = el("div", "sc-badge " + levelClass(result.level));
+    badge.appendChild(el("span", "sc-badge-number", String(result.score)));
+    badge.appendChild(el("span", "sc-badge-level", result.level + " trust"));
+    top.appendChild(badge);
     card.appendChild(top);
 
     if (result.hardStops.length) {
       var stops = el("ul", "hard-stops");
       result.hardStops.forEach(function (hs) {
-        var li = el("li", null);
-        li.appendChild(el("span", "warn-icon", "⚠"));
-        li.appendChild(document.createTextNode(" " + hs.label));
-        stops.appendChild(li);
+        stops.appendChild(el("li", null, "⚠ " + hs.label));
       });
       card.appendChild(stops);
     }
@@ -346,49 +393,94 @@
     });
     toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
     toggle.setAttribute("aria-controls", contentId);
+    card.appendChild(toggle);
     var content = el("blockquote", "doc-content", doc.content);
     content.id = contentId;
     content.hidden = !expanded;
-
-    var actions = el("div", "card-actions");
-    actions.appendChild(toggle);
-    var use = button("Use this document", "btn btn-primary", "use-" + doc.id, function () {
-      selectDoc(doc.id);
-    });
-    use.setAttribute("aria-pressed", selected ? "true" : "false");
-    actions.appendChild(use);
     card.appendChild(content);
-    card.appendChild(actions);
 
-    return card;
+    wrap.appendChild(card);
+    return wrap;
   }
 
-  function renderAnswer(ranked) {
-    var panel = document.getElementById("answer-panel");
-    var body = document.getElementById("answer-body");
-    body.textContent = "";
+  // ---------- Document list (agent reply to a question) ----------
 
-    var item = null;
-    for (var i = 0; i < ranked.length; i++) {
-      if (ranked[i].doc.id === state.selectedDocId) item = ranked[i];
-    }
-    if (!item) {
-      panel.hidden = true;
-      return;
-    }
-    panel.hidden = false;
+  function renderDocRow(item, isTop) {
+    var doc = item.doc;
+    var result = item.result;
+    var selected = state.selectedDocId === doc.id;
+    var open = state.openCard === doc.id;
 
-    var q = currentQuestion();
-    body.appendChild(el("p", "answer-text", ANSWERS[q.id][item.doc.id]));
+    var li = el("li", "doc" + (selected ? " is-selected" : "") + (open ? " is-open" : ""));
+    var row = el("div", "doc-row");
 
-    var based = el("div", "based-on");
+    var main = button("", "doc-main", "use-" + doc.id, function () {
+      selectDoc(doc.id);
+    });
+    main.setAttribute("aria-pressed", selected ? "true" : "false");
+    main.setAttribute("aria-label", "Use " + doc.title + ", trust score " + result.score + ", " + result.level);
+    main.appendChild(scorePill(result));
+
+    var text = el("span", "doc-text");
+    text.appendChild(el("span", "doc-title", doc.title));
+    var sub = (SOURCE_TYPE_LABELS[doc.sourceType] || doc.sourceType) + " · " + doc.team + " · " + doc.year;
+    text.appendChild(el("span", "doc-sub", sub));
+    var tags = el("span", "doc-tags");
+    if (isTop) tags.appendChild(el("span", "tag tag-recommended", "Recommended"));
+    var delta = state.snapshot[doc.id];
+    if (delta) tags.appendChild(el("span", "tag tag-delta", formatDelta(delta) + " since last question"));
+    result.hardStops.forEach(function (hs) {
+      tags.appendChild(el("span", "tag tag-stop", "⚠ " + hs.label));
+    });
+    if (tags.childNodes.length) text.appendChild(tags);
+    main.appendChild(text);
+    row.appendChild(main);
+
+    var info = button("i", "doc-info", "info-" + doc.id, function () {
+      toggleCard(doc.id);
+    });
+    info.setAttribute("aria-label", (open ? "Hide" : "Show") + " scorecard for " + doc.title);
+    info.setAttribute("aria-expanded", open ? "true" : "false");
+    info.setAttribute("aria-controls", "scorecard-" + doc.id);
+    row.appendChild(info);
+
+    li.appendChild(row);
+    li.appendChild(renderScorecard(item));
+    return li;
+  }
+
+  function renderDocsMessage(ranked) {
+    var m = message("agent");
+    var top = ranked[0];
+    m.bubble.appendChild(el("p", null,
+      "I found " + ranked.length + " documents about meal vouchers. I recommend “" + top.doc.title +
+      "” (trust " + top.result.score + ", " + top.result.level + ")."));
+    m.bubble.appendChild(el("p", "hint",
+      "Hover a document (or use the ⓘ button) to see its scorecard. Click a document to get the answer from it."));
+    var list = el("ul", "doc-list");
+    list.setAttribute("aria-label", "Sources found (" + ranked.length + ")");
+    ranked.forEach(function (item, i) {
+      list.appendChild(renderDocRow(item, i === 0));
+    });
+    m.bubble.appendChild(list);
+    return m.li;
+  }
+
+  // ---------- Answer (agent reply to a selected document) ----------
+
+  function renderAnswerMessage(item) {
+    var m = message("agent");
+    var b = m.bubble;
+    b.classList.add("bubble-answer");
+    b.appendChild(el("p", "answer-text", ANSWERS[currentQuestion().id][item.doc.id]));
+
+    var based = el("p", "based-on");
     based.appendChild(el("span", null, "Based on: " + item.doc.title));
-    based.appendChild(scoreBadge(item.result, true));
-    body.appendChild(based);
+    based.appendChild(scorePill(item.result));
+    b.appendChild(based);
 
     if (item.result.level === "Low") {
       var warn = el("div", "notice notice-low");
-      warn.setAttribute("role", "alert");
       if (item.result.hardStops.length) {
         item.result.hardStops.forEach(function (hs) {
           warn.appendChild(el("p", null, "⚠ Careful: " + hs.warning));
@@ -396,33 +488,48 @@
       } else {
         warn.appendChild(el("p", null, "⚠ Careful: this document has low trust."));
       }
-      body.appendChild(warn);
+      b.appendChild(warn);
     } else if (item.result.level === "Medium") {
-      body.appendChild(el("div", "notice notice-medium", "Medium trust: consider checking a stronger source."));
+      b.appendChild(el("div", "notice notice-medium", "Medium trust: consider checking a stronger source."));
     }
 
     var voteRow = el("div", "vote-row");
     voteRow.appendChild(el("span", "vote-question", "Did this help with your customer?"));
     var current = userVote(item.doc.id);
-    var up = button("👍", "btn btn-vote" + (current === 1 ? " is-pressed" : ""), "vote-up", function () {
+    var up = button("👍", "btn-vote" + (current === 1 ? " is-pressed" : ""), "vote-up", function () {
       vote(item.doc.id, 1);
     });
     up.setAttribute("aria-pressed", current === 1 ? "true" : "false");
     up.setAttribute("aria-label", "Yes, this helped (upvote)");
-    var down = button("👎", "btn btn-vote" + (current === -1 ? " is-pressed" : ""), "vote-down", function () {
+    var down = button("👎", "btn-vote" + (current === -1 ? " is-pressed" : ""), "vote-down", function () {
       vote(item.doc.id, -1);
     });
     down.setAttribute("aria-pressed", current === -1 ? "true" : "false");
     down.setAttribute("aria-label", "No, this did not help (downvote)");
-    voteRow.appendChild(up);
-    voteRow.appendChild(down);
-    body.appendChild(voteRow);
-
+    var voteButtons = el("span", "vote-buttons");
+    voteButtons.appendChild(up);
+    voteButtons.appendChild(down);
+    voteRow.appendChild(voteButtons);
     var isLast = state.questionIndex === QUESTIONS.length - 1;
-    var next = button(isLast ? "Start over" : "Next question", "btn btn-primary", "next", goToNextQuestion);
-    var nextRow = el("div", "next-row");
-    nextRow.appendChild(next);
-    body.appendChild(nextRow);
+    var spacer = el("span", "spacer");
+    voteRow.appendChild(spacer);
+    voteRow.appendChild(button(isLast ? "Start over" : "Next question", "btn btn-primary btn-small", "next", goToNextQuestion));
+    b.appendChild(voteRow);
+    return m.li;
+  }
+
+  function renderHistory(turn) {
+    var frag = document.createDocumentFragment();
+    var u = message("user");
+    u.bubble.textContent = turn.question;
+    frag.appendChild(u.li);
+    if (turn.answer) {
+      var a = message("agent");
+      a.bubble.appendChild(el("p", null, turn.answer));
+      a.bubble.appendChild(el("p", "based-on", "Based on: " + turn.docTitle));
+      frag.appendChild(a.li);
+    }
+    return frag;
   }
 
   function render() {
@@ -431,30 +538,68 @@
     var focusKey = active && active.getAttribute ? active.getAttribute("data-focus-key") : null;
 
     var q = currentQuestion();
-    document.getElementById("question-label").textContent =
-      "Question " + (state.questionIndex + 1) + " of " + QUESTIONS.length;
-    document.getElementById("question-text").textContent = q.text;
-    document.getElementById("country-chip").textContent = "Country: " + CONTEXT.countryName;
+    var thread = document.getElementById("thread");
+    thread.textContent = "";
 
-    var ranked = rankedDocs();
-    document.getElementById("sources-heading").textContent = "Sources found (" + ranked.length + ")";
-    var list = document.getElementById("cards");
-    list.textContent = "";
-    ranked.forEach(function (item, i) {
-      list.appendChild(renderCard(item, i === 0));
+    var intro = message("agent");
+    intro.bubble.textContent = "Hi! Ask me a payroll question. I’ll show you the documents I found and how much you can trust each one.";
+    thread.appendChild(intro.li);
+
+    state.history.forEach(function (turn) {
+      thread.appendChild(renderHistory(turn));
     });
 
-    renderAnswer(ranked);
+    if (state.sent) {
+      var u = message("user");
+      u.bubble.textContent = q.text;
+      thread.appendChild(u.li);
+
+      var ranked = rankedDocs();
+      thread.appendChild(renderDocsMessage(ranked));
+
+      for (var i = 0; i < ranked.length; i++) {
+        if (ranked[i].doc.id === state.selectedDocId) thread.appendChild(renderAnswerMessage(ranked[i]));
+      }
+    }
+
+    // Composer: the demo question is pre-filled until it is sent.
+    document.getElementById("question-label").textContent =
+      "Question " + (state.questionIndex + 1) + " of " + QUESTIONS.length;
+    document.getElementById("country-chip").textContent = "Country: " + CONTEXT.countryName;
+    var input = document.getElementById("question-input");
+    var sendBtn = document.getElementById("send-btn");
+    input.value = state.sent ? "" : q.text;
+    input.placeholder = state.sent ? "Pick a document above to get the answer" : "";
+    sendBtn.disabled = state.sent;
 
     if (focusKey) {
       var target = document.querySelector('[data-focus-key="' + focusKey + '"]');
-      if (target) target.focus();
+      if (target && !target.disabled) target.focus({ preventScroll: true });
     }
   }
 
   // ---------- Init ----------
 
   document.getElementById("reset-btn").addEventListener("click", resetDemo);
+  document.getElementById("composer").addEventListener("submit", function (e) {
+    e.preventDefault();
+    send();
+  });
+  document.getElementById("question-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      send();
+    }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && state.openCard) {
+      var key = "info-" + state.openCard;
+      state.openCard = null;
+      render();
+      var info = document.querySelector('[data-focus-key="' + key + '"]');
+      if (info) info.focus();
+    }
+  });
   loadState();
   render();
 

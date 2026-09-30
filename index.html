@@ -21,27 +21,24 @@
     </div>
   </header>
 
-  <main class="container">
-    <section class="panel question-panel" aria-labelledby="question-label">
-      <h2 id="question-label" class="question-label" tabindex="-1">Question 1 of 2</h2>
-      <div id="question-text" class="question-text" role="textbox" aria-readonly="true" aria-labelledby="question-label"></div>
-      <span id="country-chip" class="chip"></span>
-    </section>
-
-    <section class="sources" aria-labelledby="sources-heading">
-      <h2 id="sources-heading" class="section-heading">Sources found (4)</h2>
-      <div id="cards" class="cards"></div>
-    </section>
-
-    <section id="answer-panel" class="panel answer-panel" aria-labelledby="answer-heading" hidden>
-      <h2 id="answer-heading" class="section-heading">Answer</h2>
-      <div id="answer-body" aria-live="polite"></div>
-    </section>
+  <main class="chat">
+    <ol id="thread" class="thread" aria-live="polite" aria-label="Conversation"></ol>
   </main>
 
-  <footer class="site-footer">
-    <p>Demo with fictional data. Amounts are not real legislation.</p>
-  </footer>
+  <div class="composer-bar">
+    <form id="composer" class="composer" autocomplete="off">
+      <div class="composer-meta">
+        <span id="question-label" class="question-label" tabindex="-1">Question 1 of 2</span>
+        <span id="country-chip" class="chip"></span>
+      </div>
+      <div class="composer-row">
+        <label for="question-input" class="visually-hidden">Question</label>
+        <textarea id="question-input" class="composer-input" rows="1" readonly></textarea>
+        <button id="send-btn" type="submit" class="btn btn-primary btn-send" data-focus-key="send">Send</button>
+      </div>
+    </form>
+    <footer class="site-footer">Demo with fictional data. Amounts are not real legislation.</footer>
+  </div>
 
   <script src="data.js"></script>
   <script src="app.js"></script>
