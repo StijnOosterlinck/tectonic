@@ -34,7 +34,7 @@ const DOCUMENTS = [
     year: 2026,
     country: "BE",
     validUntil: "2026-12-31",
-    baseVotes: 12,
+    baseFeedback: { helpful: 12, notHelpful: 1 },
     content: "From 1 January 2026, the employer contribution to meal vouchers is capped at €7.50 per voucher. The employee contributes at least €1.20 per voucher. This policy replaces all earlier internal guidance on meal vouchers."
   },
   {
@@ -47,7 +47,7 @@ const DOCUMENTS = [
     year: 2025,
     country: "BE",
     validUntil: null,
-    baseVotes: 2,
+    baseFeedback: { helpful: 3, notHelpful: 1 },
     content: "Hey all, heard the meal voucher amounts went up this year, think the employer part is €7.50 now? Employee part still about €1 I believe. Can someone from legal confirm?"
   },
   {
@@ -60,7 +60,7 @@ const DOCUMENTS = [
     year: 2024,
     country: "BE",
     validUntil: null,
-    baseVotes: 7,
+    baseFeedback: { helpful: 7, notHelpful: 2 },
     content: "Meal vouchers: the employer contribution is capped at €6.50 per voucher. The employee contributes at least €1.09 per voucher. Last reviewed March 2024."
   },
   {
@@ -73,7 +73,7 @@ const DOCUMENTS = [
     year: 2026,
     country: "LU",
     validUntil: "2026-12-31",
-    baseVotes: 8,
+    baseFeedback: { helpful: 8, notHelpful: 1 },
     content: "Luxembourg: the employer contributes up to €8.00 per meal voucher. The employee contributes at least €2.80 per voucher. Applies to employees working in Luxembourg only."
   },
   {
@@ -86,7 +86,7 @@ const DOCUMENTS = [
     year: 2026,
     country: "BE",
     validUntil: null,
-    baseVotes: 3,
+    baseFeedback: { helpful: 3, notHelpful: 0 },
     content: "From 1 January 2026, the employer contribution to meal vouchers is capped at €7.50 per voucher. The employee contributes at least €1.20 per voucher. (Copied from the 2026 meal voucher policy for new-joiner training.)"
   }
 ];
@@ -133,9 +133,10 @@ const SCORING = {
   ownerPenalty: { "active": 0, "none": 15, "left-company": 15 },
   agePenaltyPerYear: 5,        // per year older than the DEMO_DATE year
   agePenaltyMax: 20,
-  upvoteBonusPerVote: 1,       // for positive net votes
-  upvoteBonusMax: 15,
-  downvotePenaltyPerVote: 2,   // for negative net votes
+  // Colleague feedback counts as a helpful RATE, not a vote count: 100% helpful -> +max, 50% -> 0,
+  // 0% -> -max. The effect grows with the number of votes until fullConfidenceVotes is reached.
+  helpfulRateMaxBonus: 12,
+  helpfulRateFullConfidenceVotes: 10,
   openConflictPenalty: 10,     // once per document, if it is in ANY open or sent conflict
   expertConfirmedBonus: 5,     // once per document, if it WON at least one resolved conflict
   hardStopCap: 35,             // max score when a hard stop applies

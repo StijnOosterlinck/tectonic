@@ -11,7 +11,8 @@
     conflicts: "trustDemo.conflicts",
     docStatus: "trustDemo.docStatus",
     skipped: "trustDemo.skipped",
-    userId: "trustDemo.userId"
+    userId: "trustDemo.userId",
+    appliedVotes: "trustDemo.appliedVotes"
   };
 
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -67,7 +68,8 @@
   // doc: static document data plus runtime `status`.
   // conflicts: all conflicts with their runtime state merged in.
   // context: { country, demoDate, titleOf(docId), userName(userId) }
-  function scoreDocument(doc, netVotes, conflicts, context) {
+  // feedback: { helpful, notHelpful } – counted votes (base + applied demo votes).
+  function scoreDocument(doc, feedback, conflicts, context) {
     var cfg = SCORING;
     var reasons = [];
     var hardStops = [];
@@ -97,14 +99,15 @@
       score -= agePenalty;
     }
 
-    if (netVotes > 0) {
-      var bonus = Math.min(netVotes * cfg.upvoteBonusPerVote, cfg.upvoteBonusMax);
-      reasons.push(plural(netVotes, "net upvote") + ": " + formatDelta(bonus));
-      score += bonus;
-    } else if (netVotes < 0) {
-      var penalty = Math.abs(netVotes) * cfg.downvotePenaltyPerVote;
-      reasons.push(plural(Math.abs(netVotes), "net downvote") + ": " + formatDelta(-penalty));
-      score -= penalty;
+    // Colleague feedback as a helpful rate: 100% -> +max, 50% -> 0, 0% -> -max,
+    // scaled down while there are only a few votes. One extra vote barely moves it.
+    var totalVotes = feedback.helpful + feedback.notHelpful;
+    if (totalVotes > 0) {
+      var rate = feedback.helpful / totalVotes;
+      var confidence = Math.min(1, totalVotes / cfg.helpfulRateFullConfidenceVotes);
+      var effect = Math.round((rate - 0.5) * 2 * cfg.helpfulRateMaxBonus * confidence);
+      reasons.push(Math.round(rate * 100) + "% found it helpful (" + plural(totalVotes, "vote") + "): " + formatDelta(effect));
+      score += effect;
     }
 
     // Open or sent conflicts: one penalty per document, however many conflicts.
@@ -207,8 +210,9 @@
   var state = {
     userId: DEFAULT_USER_ID,
     questionIndex: 0,
-    votes: {},          // { [userId]: { [questionId]: { [docId]: 1 | -1 } } }
-    snapshot: {},       // { [docId]: vote delta added during the previous question }
+    votes: {},          // { [userId]: { [questionId]: { [docId]: 1 | -1 } } } – what users clicked
+    appliedVotes: {},   // same shape – votes already counted in scores (updated when the next question starts)
+    snapshot: {},       // { [docId]: { helpful, notHelpful } } newly counted when the current question started
     conflicts: {},      // { [conflictId]: { status, winner, resolvedBy, resolvedAt } }
     docStatus: {},      // { [docId]: "active" | "superseded" | "archived" }
     skipped: {},        // { [questionId]: [conflictId] }
@@ -234,6 +238,11 @@
       return !!findUser(k) && isPlainObject(votes[k]);
     });
     state.votes = validVotes ? votes : {};
+    var applied = load(STORAGE_KEYS.appliedVotes, {});
+    var validApplied = validVotes && isPlainObject(applied) && Object.keys(applied).every(function (k) {
+      return !!findUser(k) && isPlainObject(applied[k]);
+    });
+    state.appliedVotes = validApplied ? applied : {};
 
     var snap = load(STORAGE_KEYS.snapshot, {});
     state.snapshot = isPlainObject(snap) ? snap : {};
@@ -248,6 +257,7 @@
   function persist() {
     save(STORAGE_KEYS.userId, state.userId);
     save(STORAGE_KEYS.votes, state.votes);
+    save(STORAGE_KEYS.appliedVotes, state.appliedVotes);
     save(STORAGE_KEYS.questionIndex, state.questionIndex);
     save(STORAGE_KEYS.snapshot, state.snapshot);
     save(STORAGE_KEYS.conflicts, state.conflicts);
@@ -314,16 +324,18 @@
     return null;
   }
 
-  function netVotesFor(doc) {
-    var total = doc.baseVotes;
-    Object.keys(state.votes).forEach(function (uid) {
-      var perQuestion = state.votes[uid] || {};
+  // Base feedback plus every demo vote in votesByUser (all users, all questions).
+  function feedbackFor(doc, votesByUser) {
+    var fb = { helpful: doc.baseFeedback.helpful, notHelpful: doc.baseFeedback.notHelpful };
+    Object.keys(votesByUser).forEach(function (uid) {
+      var perQuestion = votesByUser[uid] || {};
       Object.keys(perQuestion).forEach(function (qid) {
         var v = perQuestion[qid] && perQuestion[qid][doc.id];
-        if (v === 1 || v === -1) total += v;
+        if (v === 1) fb.helpful++;
+        if (v === -1) fb.notHelpful++;
       });
     });
-    return total;
+    return fb;
   }
 
   function userVote(docId) {
@@ -347,8 +359,9 @@
 
   function scoredDoc(doc, conflicts) {
     var withStatus = Object.assign({}, doc, { status: docStatus(doc.id) });
-    var net = netVotesFor(doc);
-    return { doc: withStatus, net: net, result: scoreDocument(withStatus, net, conflicts, scoringContext) };
+    // Scores only use applied votes: a new vote counts from the next question on.
+    var feedback = feedbackFor(doc, state.appliedVotes);
+    return { doc: withStatus, feedback: feedback, result: scoreDocument(withStatus, feedback, conflicts, scoringContext) };
   }
 
   // Archived documents are not scored and not shown.
@@ -612,18 +625,16 @@
       });
     }
 
-    // Snapshot the votes (all users) added during the question that is ending.
+    // Votes cast so far now start counting in the scores; remember what is newly counted per document.
+    var nextApplied = JSON.parse(JSON.stringify(state.votes));
     var snap = {};
-    Object.keys(state.votes).forEach(function (uid) {
-      var q = (state.votes[uid] || {})[prevQid] || {};
-      Object.keys(q).forEach(function (docId) {
-        var v = q[docId];
-        if (v === 1 || v === -1) snap[docId] = (snap[docId] || 0) + v;
-      });
+    DOCUMENTS.forEach(function (d) {
+      var before = feedbackFor(d, state.appliedVotes);
+      var after = feedbackFor(d, nextApplied);
+      var diff = { helpful: after.helpful - before.helpful, notHelpful: after.notHelpful - before.notHelpful };
+      if (diff.helpful || diff.notHelpful) snap[d.id] = diff;
     });
-    Object.keys(snap).forEach(function (docId) {
-      if (!snap[docId]) delete snap[docId];
-    });
+    state.appliedVotes = nextApplied;
     state.snapshot = snap;
     state.questionIndex = isLast ? 0 : state.questionIndex + 1;
     state.sent = false;
@@ -648,6 +659,7 @@
     state.userId = DEFAULT_USER_ID;
     state.questionIndex = 0;
     state.votes = {};
+    state.appliedVotes = {};
     state.snapshot = {};
     state.conflicts = {};
     state.docStatus = {};
@@ -791,7 +803,12 @@
     })[0];
     if (won) lines.push({ tone: "ok", text: "Confirmed by " + scoringContext.userName(won.resolvedBy) });
     var delta = state.snapshot[docId];
-    if (delta) lines.push({ tone: "neutral", text: formatDelta(delta) + " since last question" });
+    if (isPlainObject(delta)) {
+      var parts = [];
+      if (delta.helpful > 0) parts.push(plural(delta.helpful, "new helpful vote"));
+      if (delta.notHelpful > 0) parts.push(plural(delta.notHelpful, "new not-helpful vote"));
+      if (parts.length) lines.push({ tone: "neutral", text: parts.join(", ") + " since last question" });
+    }
     return lines;
   }
 
@@ -838,7 +855,11 @@
     metaRow(dl, "Year", String(doc.year));
     metaRow(dl, "Country", doc.country);
     metaRow(dl, "Valid until", doc.validUntil || "Unknown");
-    metaRow(dl, "Votes", formatDelta(item.net));
+    var fb = item.feedback;
+    var fbTotal = fb.helpful + fb.notHelpful;
+    metaRow(dl, "Feedback", fbTotal
+      ? fb.helpful + " of " + fbTotal + " found it helpful"
+      : "No votes yet");
     card.appendChild(dl);
 
     var reasons = el("ul", "reasons");
@@ -985,6 +1006,9 @@
     voteButtons.appendChild(up);
     voteButtons.appendChild(down);
     voteRow.appendChild(voteButtons);
+    if (current !== 0) {
+      voteRow.appendChild(el("span", "vote-thanks", "Thanks – counted from the next question."));
+    }
     var isLast = state.questionIndex === QUESTIONS.length - 1;
     var spacer = el("span", "spacer");
     voteRow.appendChild(spacer);
